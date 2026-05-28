@@ -15,6 +15,7 @@ export function chooseAiMove(board, aiColor, difficulty = 'easy') {
   const immediateBlock = findWinningMove(board, opponent, moves);
   if (immediateBlock) return immediateBlock;
 
+  if (level <= 2) return beginnerMove(board, aiColor, moves, level);
   return bestLevelMove(board, aiColor, opponent, moves, level);
 }
 
@@ -42,6 +43,16 @@ function findWinningMove(board, color, moves) {
 
 function preferCenter(moves) {
   return moves.slice().sort((a, b) => distanceToCenter(a) - distanceToCenter(b))[0];
+}
+
+function beginnerMove(board, color, moves, level) {
+  return moves
+    .map((move) => ({
+      move,
+      score: (24 - distanceToCenter(move)) * 6 +
+        neighborCount(board, move[0], move[1], color) * (18 + level * 4)
+    }))
+    .sort((a, b) => b.score - a.score || distanceToCenter(a.move) - distanceToCenter(b.move))[0].move;
 }
 
 function bestLevelMove(board, color, opponent, moves, level) {
@@ -98,15 +109,39 @@ function scoreMove(board, [row, col], color, opponent, level) {
   const opponentFork = level >= 7 ? forkPotential(next, opponent) : 0;
   const attackWeight = 0.8 + level * 0.11;
   const defenseWeight = 0.95 + level * 0.14;
+  const ownTactical = visibleTacticalValue(tacticalValue(board, [row, col], color), attackVisionFloor(level));
+  const opponentTactical = visibleTacticalValue(tacticalValue(board, [row, col], opponent), defenseVisionFloor(level));
   return centerScore +
-    tacticalValue(board, [row, col], color) * attackWeight +
-    tacticalValue(board, [row, col], opponent) * defenseWeight +
+    ownTactical * attackWeight +
+    opponentTactical * defenseWeight +
     ownFork * (level >= 8 ? 0.45 : 0.25) -
     opponentFork * (level >= 9 ? 0.75 : 0.45) +
     neighborCount(board, row, col, color) * (6 + level) +
-    neighborCount(board, row, col, opponent) * (7 + level) -
+    neighborCount(board, row, col, opponent) * opponentNeighborWeight(level) -
     (givesImmediateWin ? 500_000 : 0) -
     opponentReplyThreat * (level >= 9 ? 0.92 : 0.65);
+}
+
+function visibleTacticalValue(score, floor) {
+  return score >= floor ? score : 0;
+}
+
+function attackVisionFloor(level) {
+  if (level >= 7) return 4_000;
+  if (level >= 4) return 18_000;
+  return 60_000;
+}
+
+function defenseVisionFloor(level) {
+  if (level >= 6) return 4_000;
+  if (level >= 3) return 18_000;
+  return 60_000;
+}
+
+function opponentNeighborWeight(level) {
+  if (level >= 6) return 7 + level;
+  if (level >= 3) return 3 + level;
+  return 0;
 }
 
 function strongestReplyThreat(board, opponent, moves = nearbyMoves(board, getLegalMoves(board))) {

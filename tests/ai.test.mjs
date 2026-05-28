@@ -34,6 +34,30 @@ test('stage 1 AI blocks a basic four-stone attack', () => {
   assert.ok(move[1] === 3 || move[1] === 8);
 });
 
+test('stage 1 AI does not read open-three threats yet', () => {
+  let board = createBoard();
+  for (let col = 2; col < 5; col += 1) board = placeStone(board, 2, col, 'black');
+  board = placeStone(board, 7, 7, 'white');
+  board = placeStone(board, 8, 8, 'white');
+
+  const move = chooseAiMove(board, 'white', 'level-1');
+
+  assert.notDeepEqual(move, [2, 1]);
+  assert.notDeepEqual(move, [2, 5]);
+});
+
+test('stage 3 AI starts defending open-three threats', () => {
+  let board = createBoard();
+  for (let col = 2; col < 5; col += 1) board = placeStone(board, 2, col, 'black');
+  board = placeStone(board, 7, 7, 'white');
+  board = placeStone(board, 8, 8, 'white');
+
+  const move = chooseAiMove(board, 'white', 'level-3');
+
+  assert.equal(move[0], 2);
+  assert.ok(move[1] === 1 || move[1] === 5);
+});
+
 test('stage 6 AI blocks an open three before it grows into a forced win', () => {
   let board = createBoard();
   for (let col = 6; col < 9; col += 1) board = placeStone(board, 7, col, 'black');
