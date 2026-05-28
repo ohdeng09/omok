@@ -29,6 +29,9 @@ test('mobile clients can install and share room links', async () => {
   assert.match(app, /serviceWorker/);
   assert.match(manifest, /온라인 오목/);
   assert.match(sw, /CACHE_NAME/);
+  assert.match(sw, /networkFirst/);
+  assert.match(sw, /event\.request\.mode === 'navigate'/);
+  assert.doesNotMatch(sw, /cached\) => cached \|\| fetch/);
 });
 
 test('deployed app shell does not blank if supplemental files are omitted', async () => {

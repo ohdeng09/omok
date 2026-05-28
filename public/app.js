@@ -1,8 +1,9 @@
-import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-mobile-link';
-import { chooseAiMove } from '/src/ai.js?v=20260528-mobile-link';
+import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-cache-fix';
+import { chooseAiMove } from '/src/ai.js?v=20260528-cache-fix';
 
 const app = document.querySelector('#app');
-const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/';
+const CACHE_BUST_PARAM = '20260528-cache-fix';
+const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/?fresh=20260528-cache-fix';
 const SOUND_STORAGE_KEY = 'omok:sound-muted';
 const sound = createSoundEngine();
 const initialParams = new URLSearchParams(location.search);
@@ -430,7 +431,8 @@ async function shareUrl(shareData) {
 }
 
 function roomInviteUrl(code) {
-  const url = new URL(location.origin + location.pathname);
+  const url = new URL(PUBLIC_APP_URL);
+  url.searchParams.set('fresh', CACHE_BUST_PARAM);
   url.searchParams.set('room', code);
   return url.toString();
 }
@@ -530,13 +532,19 @@ function colorLabel(color) {
 }
 
 function stageDifficulty(stage) {
-  if (stage >= 9) return 'expert';
-  if (stage >= 7) return 'hard';
-  if (stage >= 4) return 'normal';
-  return 'easy';
+  return `level-${Math.max(1, Math.min(10, Number(stage) || 1))}`;
 }
 
 function difficultyLabel(difficulty) {
+  const levelMatch = String(difficulty).match(/level-(\d+)/);
+  if (levelMatch) {
+    const level = Number(levelMatch[1]);
+    if (level >= 10) return '최고';
+    if (level >= 8) return '고급';
+    if (level >= 6) return '어려움';
+    if (level >= 3) return '보통';
+    return '입문';
+  }
   if (difficulty === 'expert') return '최고';
   if (difficulty === 'hard') return '어려움';
   if (difficulty === 'normal') return '보통';

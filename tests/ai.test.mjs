@@ -12,6 +12,53 @@ test('AI blocks an immediate four-stone threat', () => {
   assert.deepEqual(move, [7, 2]);
 });
 
+test('stage 1 AI takes an immediate win instead of wandering', () => {
+  let board = createBoard();
+  for (let col = 4; col < 8; col += 1) board = placeStone(board, 7, col, 'white');
+  board = placeStone(board, 6, 6, 'black');
+
+  const move = chooseAiMove(board, 'white', 'level-1');
+
+  assert.equal(move[0], 7);
+  assert.ok(move[1] === 3 || move[1] === 8);
+});
+
+test('stage 1 AI blocks a basic four-stone attack', () => {
+  let board = createBoard();
+  for (let col = 4; col < 8; col += 1) board = placeStone(board, 7, col, 'black');
+  board = placeStone(board, 6, 6, 'white');
+
+  const move = chooseAiMove(board, 'white', 'level-1');
+
+  assert.equal(move[0], 7);
+  assert.ok(move[1] === 3 || move[1] === 8);
+});
+
+test('stage 6 AI blocks an open three before it grows into a forced win', () => {
+  let board = createBoard();
+  for (let col = 6; col < 9; col += 1) board = placeStone(board, 7, col, 'black');
+  board = placeStone(board, 6, 6, 'white');
+  board = placeStone(board, 8, 8, 'white');
+
+  const move = chooseAiMove(board, 'white', 'level-6');
+
+  assert.equal(move[0], 7);
+  assert.ok(move[1] === 5 || move[1] === 9);
+});
+
+test('stage 10 AI blocks the strongest four even when it has a tempting attack', () => {
+  let board = createBoard();
+  for (let col = 4; col < 8; col += 1) board = placeStone(board, 7, col, 'black');
+  board = placeStone(board, 5, 5, 'white');
+  board = placeStone(board, 5, 6, 'white');
+  board = placeStone(board, 5, 7, 'white');
+
+  const move = chooseAiMove(board, 'white', 'level-10');
+
+  assert.equal(move[0], 7);
+  assert.ok(move[1] === 3 || move[1] === 8);
+});
+
 test('hard AI blocks a one-sided four before the player can make five', () => {
   let board = createBoard();
   board = placeStone(board, 7, 5, 'white');

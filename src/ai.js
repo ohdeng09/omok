@@ -7,18 +7,29 @@ export function chooseAiMove(board, aiColor, difficulty = 'easy') {
   if (legalMoves.length === 0) return null;
 
   const opponent = otherColor(aiColor);
-  const moves = difficulty === 'hard' || difficulty === 'expert'
-    ? nearbyMoves(board, legalMoves)
-    : legalMoves;
+  const level = aiLevel(difficulty);
+  const moves = nearbyMoves(board, legalMoves, level >= 8 ? 3 : 2);
   const immediateWin = findWinningMove(board, aiColor, moves);
   if (immediateWin) return immediateWin;
 
   const immediateBlock = findWinningMove(board, opponent, moves);
   if (immediateBlock) return immediateBlock;
 
-  if (difficulty === 'hard' || difficulty === 'expert') return bestHardMove(board, aiColor, opponent, moves, difficulty);
-  if (difficulty === 'normal') return preferCenter(moves);
-  return legalMoves[Math.floor(Math.random() * legalMoves.length)];
+  return bestLevelMove(board, aiColor, opponent, moves, level);
+}
+
+function aiLevel(difficulty) {
+  if (typeof difficulty === 'number') return clampLevel(difficulty);
+  const levelMatch = String(difficulty).match(/level-(\d+)/);
+  if (levelMatch) return clampLevel(Number(levelMatch[1]));
+  if (difficulty === 'expert') return 10;
+  if (difficulty === 'hard') return 8;
+  if (difficulty === 'normal') return 5;
+  return 2;
+}
+
+function clampLevel(level) {
+  return Math.max(1, Math.min(10, Number.isFinite(level) ? Math.round(level) : 1));
 }
 
 function findWinningMove(board, color, moves) {
@@ -33,47 +44,82 @@ function preferCenter(moves) {
   return moves.slice().sort((a, b) => distanceToCenter(a) - distanceToCenter(b))[0];
 }
 
-function bestHardMove(board, color, opponent, moves, difficulty) {
+function bestLevelMove(board, color, opponent, moves, level) {
   const forcingMove = bestThreatMove(board, color, moves);
   const defensiveMove = bestThreatMove(board, opponent, moves);
   const forcingScore = forcingMove ? tacticalValue(board, forcingMove, color) : 0;
   const defensiveScore = defensiveMove ? tacticalValue(board, defensiveMove, opponent) : 0;
+  const defenseThreshold = threatThreshold(level);
 
-  if (defensiveScore >= 12000 && defensiveScore >= forcingScore) return defensiveMove;
-  if (forcingScore >= 12000) return forcingMove;
-  return bestScoredMove(board, color, opponent, moves, difficulty);
+  if (defensiveScore >= defenseThreshold && shouldDefend(defensiveScore, forcingScore, level)) return defensiveMove;
+  if (forcingScore >= attackThreshold(level)) return forcingMove;
+  return bestScoredMove(board, color, opponent, moves, level);
 }
 
 function bestThreatMove(board, color, moves) {
   return moves
     .map((move) => ({ move, score: tacticalValue(board, move, color) }))
-    .filter((candidate) => candidate.score >= 12000)
+    .filter((candidate) => candidate.score >= 1000)
     .sort((a, b) => b.score - a.score || distanceToCenter(a.move) - distanceToCenter(b.move))[0]?.move ?? null;
 }
 
-function bestScoredMove(board, color, opponent, moves, difficulty) {
+function shouldDefend(defensiveScore, forcingScore, level) {
+  if (defensiveScore >= 60_000) return defensiveScore >= forcingScore * 0.8;
+  if (level >= 6 && defensiveScore >= 18_000) return defensiveScore >= forcingScore * 0.7;
+  if (level >= 3 && defensiveScore >= 18_000) return defensiveScore >= forcingScore;
+  return defensiveScore >= forcingScore * 1.15;
+}
+
+function threatThreshold(level) {
+  if (level >= 6) return 4_000;
+  if (level >= 3) return 18_000;
+  return 60_000;
+}
+
+function attackThreshold(level) {
+  if (level >= 7) return 4_000;
+  if (level >= 4) return 18_000;
+  return 60_000;
+}
+
+function bestScoredMove(board, color, opponent, moves, level) {
   return moves
-    .map((move) => ({ move, score: scoreMove(board, move, color, opponent, difficulty) }))
+    .map((move) => ({ move, score: scoreMove(board, move, color, opponent, level) }))
     .sort((a, b) => b.score - a.score || distanceToCenter(a.move) - distanceToCenter(b.move))[0].move;
 }
 
-function scoreMove(board, [row, col], color, opponent, difficulty) {
-  const centerScore = 20 - distanceToCenter([row, col]);
+function scoreMove(board, [row, col], color, opponent, level) {
+  const centerScore = (20 - distanceToCenter([row, col])) * Math.max(2, 12 - level);
   const next = placeStone(board, row, col, color);
-  const replyMoves = difficulty === 'expert' ? nearbyMoves(next, getLegalMoves(next)) : [];
-  const givesImmediateWin = difficulty === 'expert' && findWinningMove(next, opponent, replyMoves);
-  const opponentReplyThreat = difficulty === 'expert' ? strongestReplyThreat(next, opponent) : 0;
+  const replyMoves = level >= 3 ? nearbyMoves(next, getLegalMoves(next), level >= 8 ? 3 : 2) : [];
+  const givesImmediateWin = level >= 3 && findWinningMove(next, opponent, replyMoves);
+  const opponentReplyThreat = level >= 5 ? strongestReplyThreat(next, opponent, replyMoves) : 0;
+  const ownFork = level >= 5 ? forkPotential(next, color) : 0;
+  const opponentFork = level >= 7 ? forkPotential(next, opponent) : 0;
+  const attackWeight = 0.8 + level * 0.11;
+  const defenseWeight = 0.95 + level * 0.14;
   return centerScore +
-    tacticalValue(board, [row, col], color) +
-    tacticalValue(board, [row, col], opponent) * 0.92 +
-    neighborCount(board, row, col, color) * 8 +
-    neighborCount(board, row, col, opponent) * 6 -
+    tacticalValue(board, [row, col], color) * attackWeight +
+    tacticalValue(board, [row, col], opponent) * defenseWeight +
+    ownFork * (level >= 8 ? 0.45 : 0.25) -
+    opponentFork * (level >= 9 ? 0.75 : 0.45) +
+    neighborCount(board, row, col, color) * (6 + level) +
+    neighborCount(board, row, col, opponent) * (7 + level) -
     (givesImmediateWin ? 500_000 : 0) -
-    opponentReplyThreat * 0.72;
+    opponentReplyThreat * (level >= 9 ? 0.92 : 0.65);
 }
 
-function strongestReplyThreat(board, opponent) {
-  return Math.max(0, ...nearbyMoves(board, getLegalMoves(board)).map((move) => tacticalValue(board, move, opponent)));
+function strongestReplyThreat(board, opponent, moves = nearbyMoves(board, getLegalMoves(board))) {
+  return Math.max(0, ...moves.map((move) => tacticalValue(board, move, opponent)));
+}
+
+function forkPotential(board, color) {
+  const threats = nearbyMoves(board, getLegalMoves(board), 2)
+    .map((move) => tacticalValue(board, move, color))
+    .filter((score) => score >= 18_000)
+    .sort((a, b) => b - a);
+  if (threats.length < 2) return threats[0] || 0;
+  return threats[0] + threats[1] * 0.85 + threats.length * 1_500;
 }
 
 function nearbyMoves(board, legalMoves, radius = 2) {
