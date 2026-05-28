@@ -43,6 +43,13 @@ test('white wins vertically and diagonally', () => {
   assert.equal(getWinner(diagonal)?.color, 'white');
 });
 
+test('six in a row is not treated as an exact five win', () => {
+  let board = createBoard();
+  for (let col = 3; col < 9; col += 1) board = placeStone(board, 7, col, 'black');
+
+  assert.equal(getWinner(board), null);
+});
+
 test('rejects occupied and out of range moves', () => {
   const board = placeStone(createBoard(), 0, 0, 'black');
   assert.throws(() => placeStone(board, 0, 0, 'white'), /occupied/);

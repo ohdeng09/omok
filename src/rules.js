@@ -56,13 +56,13 @@ export function getWinner(board) {
         if (isInside(beforeRow, beforeCol) && board[beforeRow][beforeCol] === color) continue;
 
         const line = [];
-        for (let step = 0; step < 5; step += 1) {
+        for (let step = 0; step < BOARD_SIZE; step += 1) {
           const nextRow = row + dr * step;
           const nextCol = col + dc * step;
           if (!isInside(nextRow, nextCol) || board[nextRow][nextCol] !== color) break;
           line.push([nextRow, nextCol]);
         }
-        if (line.length >= 5) return { color, line: line.slice(0, 5) };
+        if (line.length === 5) return { color, line };
       }
     }
   }

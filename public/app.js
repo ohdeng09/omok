@@ -1,11 +1,12 @@
-import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js';
-import { chooseAiMove } from '/src/ai.js';
-import { calculateMissions, updateLocalRecord } from '/src/scoring.js';
-import { createSoundEngine } from '/sound.js';
+import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-mobile-link';
+import { chooseAiMove } from '/src/ai.js?v=20260528-mobile-link';
 
 const app = document.querySelector('#app');
+const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/';
+const SOUND_STORAGE_KEY = 'omok:sound-muted';
 const sound = createSoundEngine();
 const initialParams = new URLSearchParams(location.search);
+cleanRuntimeUrl(initialParams);
 const state = {
   nickname: localStorage.getItem('omok:nickname') || '',
   player: null,
@@ -16,6 +17,8 @@ const state = {
   lastOnlineRoomCode: null,
   lastOnlineMoveCount: null,
   lastOnlineResultKey: null,
+  lastOnlineStatus: null,
+  lastOnlinePlayerCount: null,
   savedResultFor: null,
   record: JSON.parse(localStorage.getItem('omok:record') || '{}')
 };
@@ -44,12 +47,14 @@ function renderLobby(message = '') {
           <button class="secondary" name="action" value="join">방 입장</button>
           <button class="secondary" name="action" value="solo">혼자 하기</button>
         </div>
+        ${mobileShareHtml()}
         ${state.pendingRoomCode ? '<p class="muted">초대 링크로 들어왔습니다. 닉네임을 넣고 방 입장을 누르세요.</p>' : ''}
         ${message ? `<p class="muted">${escapeHtml(message)}</p>` : ''}
       </form>
     </section>`;
   document.querySelector('#lobby-form').addEventListener('submit', onLobbySubmit);
   wireSoundControls();
+  wireMobileShare();
 }
 
 async function onLobbySubmit(event) {
@@ -89,6 +94,8 @@ function subscribe(code) {
   state.lastOnlineRoomCode = code;
   state.lastOnlineMoveCount = null;
   state.lastOnlineResultKey = null;
+  state.lastOnlineStatus = null;
+  state.lastOnlinePlayerCount = null;
   state.source = new EventSource(`/api/rooms/${code}/events`);
   state.source.onmessage = (event) => {
     state.room = JSON.parse(event.data);
@@ -123,6 +130,7 @@ function renderOnline(connectionMessage = '') {
           </div>
         </div>
         <p class="muted">${connectionMessage || onlineStatus(room, me)}</p>
+        ${ruleNoteHtml(room.partyMode)}
         ${room.partyMode ? partyModeSummaryHtml() : ''}
         <div class="stats">
           <div class="stat"><span>나</span><strong>${escapeHtml(me.nickname)} (${colorLabel(me.color)})</strong></div>
@@ -148,6 +156,7 @@ function renderOnline(connectionMessage = '') {
 function onlineStatus(room, me) {
   if (room.status === 'waiting') return '친구에게 코드를 보내주세요.';
   if (room.status === 'finished') return '대국 종료';
+  if (room.moves.length === 0) return '먼저 두는 사람이 흑돌 선공입니다.';
   return room.turn === me.color ? '내 차례입니다.' : '상대 차례입니다.';
 }
 
@@ -184,6 +193,7 @@ function renderSolo() {
           <div class="mini-actions"><span class="badge">Stage ${solo.stage}</span>${soundControlHtml()}</div>
         </div>
         <p class="muted">${solo.result ? '도전 완료' : `${difficultyLabel(solo.difficulty)} AI와 대국 중`}</p>
+        ${ruleNoteHtml(false)}
         ${solo.result ? resultHtml({ ...solo, players: [{ color: 'black', nickname: state.nickname }, { color: 'white', nickname: 'AI' }] }, { color: 'black', nickname: state.nickname }) : ''}
         <div class="stage-grid">${Array.from({ length: 10 }, (_, index) => `<button class="stage" data-stage="${index + 1}">${index + 1}</button>`).join('')}</div>
         <div class="actions">
@@ -246,18 +256,31 @@ function finishSoloIfNeeded() {
 function boardHtml(board, winnerLine, blockedCells) {
   const winning = new Set(winnerLine.map(([row, col]) => `${row}:${col}`));
   const blocked = new Set(blockedCells.map(([row, col]) => `${row}:${col}`));
+  const hoshi = [
+    [3, 3],
+    [3, 7],
+    [3, 11],
+    [7, 3],
+    [7, 7],
+    [7, 11],
+    [11, 3],
+    [11, 7],
+    [11, 11]
+  ].map(([row, col]) => `<span class="hoshi" style="--row: ${row}; --col: ${col};"></span>`);
+  const guides = [];
   const cells = [];
   for (let row = 0; row < BOARD_SIZE; row += 1) {
     for (let col = 0; col < BOARD_SIZE; col += 1) {
       const cell = board[row][col];
       const key = `${row}:${col}`;
+      guides.push(`<span class="intersection-guide" style="--row: ${row}; --col: ${col};"></span>`);
       cells.push(`
-        <button class="cell ${winning.has(key) ? 'winning' : ''} ${blocked.has(key) ? 'blocked' : ''}" data-row="${row}" data-col="${col}">
+        <button class="cell ${winning.has(key) ? 'winning' : ''} ${blocked.has(key) ? 'blocked' : ''}" style="--row: ${row}; --col: ${col};" data-row="${row}" data-col="${col}">
           ${cell ? `<span class="stone ${cell}"></span>` : ''}
         </button>`);
     }
   }
-  return `<div class="board">${cells.join('')}</div>`;
+  return `<div class="board">${guides.join('')}${hoshi.join('')}${cells.join('')}</div>`;
 }
 
 function attachBoardHandlers(handler) {
@@ -299,6 +322,14 @@ function partyModeSummaryHtml() {
     </div>`;
 }
 
+function ruleNoteHtml(partyMode) {
+  return `
+    <div class="mode-note rule-note">
+      <strong>${partyMode ? '정통룰 + 파티 이벤트' : '정통룰'}</strong>
+      <span>15x15 교차점에 착수 · 정확히 5목 승리 · 첫 수를 둔 사람이 흑</span>
+    </div>`;
+}
+
 function recordHtml(name) {
   const player = state.record.players?.[name];
   if (!player) return '<div class="stat"><span>기록</span><strong>첫 대국</strong></div>';
@@ -314,12 +345,22 @@ function handleOnlineAudio(room, me) {
     state.lastOnlineRoomCode = room.code;
     state.lastOnlineMoveCount = room.moves.length;
     state.lastOnlineResultKey = resultAudioKey(room);
+    state.lastOnlineStatus = room.status;
+    state.lastOnlinePlayerCount = room.players.length;
     return;
   }
+
+  const gameJustStarted =
+    room.status === 'playing' &&
+    room.moves.length === 0 &&
+    (state.lastOnlineStatus === null || state.lastOnlineStatus === 'waiting' || state.lastOnlinePlayerCount < 2);
+  if (gameJustStarted) sound.playStart();
 
   if (state.lastOnlineMoveCount === null) {
     state.lastOnlineMoveCount = room.moves.length;
     state.lastOnlineResultKey = resultAudioKey(room);
+    state.lastOnlineStatus = room.status;
+    state.lastOnlinePlayerCount = room.players.length;
     return;
   }
 
@@ -338,6 +379,8 @@ function handleOnlineAudio(room, me) {
   }
 
   state.lastOnlineMoveCount = room.moves.length;
+  state.lastOnlineStatus = room.status;
+  state.lastOnlinePlayerCount = room.players.length;
 }
 
 function resultAudioKey(room) {
@@ -346,27 +389,88 @@ function resultAudioKey(room) {
 }
 
 async function shareRoom(room) {
+  if (isLocalHost()) {
+    try {
+      await shareUrl({
+        title: '온라인 오목',
+        text: '휴대폰에서는 이 공개 링크로 열어 방을 새로 만들면 바로 대국할 수 있어요.',
+        url: PUBLIC_APP_URL
+      });
+      renderOnline('휴대폰용 공개 링크를 공유했습니다. 휴대폰에서는 공개주소에서 방을 새로 만들면 친구가 링크 클릭만으로 입장할 수 있어요.');
+    } catch {
+      renderOnline('공유가 취소되었습니다.');
+    }
+    return;
+  }
+
   const inviteUrl = roomInviteUrl(room.code);
-  const shareData = {
-    title: '온라인 오목 대결 초대',
-    text: `방 ${room.code}에서 오목 한 판 하자!`,
-    url: inviteUrl
-  };
 
   try {
-    if (navigator.share) await navigator.share(shareData);
-    else if (navigator.clipboard) await navigator.clipboard.writeText(inviteUrl);
+    await shareUrl({
+      title: '온라인 오목 대결 초대',
+      text: `방 ${room.code}에서 오목 한 판 하자!`,
+      url: inviteUrl
+    });
     renderOnline('초대 링크를 복사/공유했습니다.');
   } catch {
     renderOnline('공유가 취소되었습니다.');
   }
 }
 
+async function shareUrl(shareData) {
+  if (navigator.share) {
+    await navigator.share(shareData);
+    return;
+  }
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(shareData.url);
+    return;
+  }
+  throw new Error('share is unavailable');
+}
+
 function roomInviteUrl(code) {
-  const url = new URL(location.href);
+  const url = new URL(location.origin + location.pathname);
   url.searchParams.set('room', code);
-  url.hash = '';
   return url.toString();
+}
+
+function cleanRuntimeUrl(params) {
+  const room = normalizeRoomCode(params.get('room') || '');
+  const cleanParams = new URLSearchParams();
+  if (room) cleanParams.set('room', room);
+  const cleanSearch = cleanParams.toString();
+  const cleanPath = `${location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}`;
+  if (`${location.pathname}${location.search}` !== cleanPath) {
+    history.replaceState(null, '', cleanPath);
+  }
+}
+
+function mobileShareHtml() {
+  return `
+    <div class="mode-note mobile-note">
+      <strong>휴대폰에서 바로 실행</strong>
+      <span>친구에게는 localhost가 아니라 공개주소를 보내야 클릭 즉시 열립니다.</span>
+      <div class="mobile-link-actions">
+        <a class="link-button" href="${PUBLIC_APP_URL}" target="_blank" rel="noreferrer">공개 게임 열기</a>
+        <button class="secondary" id="share-mobile-url" type="button">휴대폰용 링크 공유</button>
+      </div>
+    </div>`;
+}
+
+function wireMobileShare() {
+  document.querySelector('#share-mobile-url')?.addEventListener('click', async () => {
+    try {
+      await shareUrl({
+        title: '온라인 오목',
+        text: '휴대폰에서 바로 열 수 있는 온라인 오목 링크입니다.',
+        url: PUBLIC_APP_URL
+      });
+      renderLobby('휴대폰용 공개 링크를 복사/공유했습니다.');
+    } catch {
+      renderLobby('공유가 취소되었습니다.');
+    }
+  });
 }
 
 function normalizeRoomCode(value) {
@@ -389,9 +493,24 @@ function wireSoundControls() {
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+  if (isLocalHost()) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.getRegistrations?.().then((registrations) => {
+        registrations.forEach((registration) => registration.unregister());
+      }).catch(() => {});
+      globalThis.caches?.keys?.().then((keys) => {
+        keys.forEach((key) => globalThis.caches.delete(key));
+      }).catch(() => {});
+    });
+    return;
+  }
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
+}
+
+function isLocalHost() {
+  return ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
 }
 
 async function post(url, body) {
@@ -406,16 +525,19 @@ async function post(url, body) {
 }
 
 function colorLabel(color) {
+  if (!color) return '첫 수=흑';
   return color === 'black' ? '흑' : '백';
 }
 
 function stageDifficulty(stage) {
+  if (stage >= 9) return 'expert';
   if (stage >= 7) return 'hard';
   if (stage >= 4) return 'normal';
   return 'easy';
 }
 
 function difficultyLabel(difficulty) {
+  if (difficulty === 'expert') return '최고';
   if (difficulty === 'hard') return '어려움';
   if (difficulty === 'normal') return '보통';
   return '쉬움';
@@ -429,4 +551,183 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#039;'
   })[char]);
+}
+
+function createSoundEngine(options = {}) {
+  const storage = options.storage ?? globalThis.localStorage;
+  const AudioContextClass = options.AudioContext ?? globalThis.AudioContext ?? globalThis.webkitAudioContext ?? null;
+  let context = null;
+  let muted = storage?.getItem(SOUND_STORAGE_KEY) === 'true';
+
+  async function unlock() {
+    if (muted || !AudioContextClass) return;
+    if (!context) context = new AudioContextClass();
+    if (context.state === 'suspended') await context.resume();
+  }
+
+  function playStone() {
+    if (!canPlay()) return;
+    const now = context.currentTime;
+    playNoise(now, 0.035, 0.16);
+    playTone({ frequency: 156, start: now, duration: 0.09, type: 'triangle', peak: 0.38 });
+    playTone({ frequency: 540, start: now + 0.006, duration: 0.035, type: 'square', peak: 0.06 });
+  }
+
+  function playStart() {
+    if (!canPlay()) return;
+    playSequence([262, 392, 523], 0.09, 0.18, 'triangle');
+  }
+
+  function playWin() {
+    if (!canPlay()) return;
+    playSequence([392, 523, 659, 784, 1046], 0.105, 0.22, 'triangle');
+  }
+
+  function playLose() {
+    if (!canPlay()) return;
+    playSequence([392, 330, 262, 196], 0.14, 0.18, 'sine');
+  }
+
+  function toggleMuted() {
+    muted = !muted;
+    storage?.setItem(SOUND_STORAGE_KEY, String(muted));
+    return muted;
+  }
+
+  function isMuted() {
+    return muted;
+  }
+
+  function canPlay() {
+    if (muted || !AudioContextClass) return false;
+    if (!context) context = new AudioContextClass();
+    return context.state !== 'suspended';
+  }
+
+  function playTone({ frequency, start, duration, type, peak }) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, start + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.02);
+  }
+
+  function playNoise(start, duration, peak) {
+    if (!context.createBufferSource) return;
+    const sampleCount = Math.max(1, Math.floor(context.sampleRate * duration));
+    const buffer = context.createBuffer(1, sampleCount, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < sampleCount; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / sampleCount);
+    }
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(peak, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.start(start);
+    source.stop(start + duration);
+  }
+
+  function playSequence(notes, step, peak, type) {
+    const start = context.currentTime;
+    notes.forEach((frequency, index) => {
+      playTone({
+        frequency,
+        start: start + index * step,
+        duration: step * 0.9,
+        type,
+        peak: peak * Math.max(0.5, 1 - index * 0.08)
+      });
+    });
+  }
+
+  return {
+    unlock,
+    playStone,
+    playStart,
+    playWin,
+    playLose,
+    toggleMuted,
+    isMuted
+  };
+}
+
+const MISSION_DEFS = {
+  win: { label: '승리', points: 1000 },
+  'open-four': { label: '열린 4 만들기', points: 450 },
+  'fast-win': { label: '빠른 승리', points: 350 },
+  revenge: { label: '복수전 승리', points: 500 }
+};
+
+function calculateMissions({ board, playerColor, winner, moveCount, previousLoserWonRematch }) {
+  const missions = [];
+  if (winner === playerColor) missions.push({ id: 'win', ...MISSION_DEFS.win });
+  if (hasOpenFour(board, playerColor)) missions.push({ id: 'open-four', ...MISSION_DEFS['open-four'] });
+  if (winner === playerColor && moveCount <= 18) missions.push({ id: 'fast-win', ...MISSION_DEFS['fast-win'] });
+  if (winner === playerColor && previousLoserWonRematch) missions.push({ id: 'revenge', ...MISSION_DEFS.revenge });
+
+  return {
+    score: missions.reduce((sum, mission) => sum + mission.points, 0),
+    missions
+  };
+}
+
+function hasOpenFour(board, color) {
+  const directions = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1]
+  ];
+
+  for (let row = 0; row < BOARD_SIZE; row += 1) {
+    for (let col = 0; col < BOARD_SIZE; col += 1) {
+      for (const [dr, dc] of directions) {
+        const cells = [];
+        for (let step = 0; step < 4; step += 1) cells.push([row + dr * step, col + dc * step]);
+        if (!cells.every(([r, c]) => r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE)) continue;
+        if (!cells.every(([r, c]) => board[r][c] === color)) continue;
+
+        const before = [row - dr, col - dc];
+        const after = [row + dr * 4, col + dc * 4];
+        if (isOpen(board, before[0], before[1]) && isOpen(board, after[0], after[1])) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function updateLocalRecord(record, { playerName, opponentName, won, score }) {
+  const next = JSON.parse(JSON.stringify(record || {}));
+  next.players ||= {};
+  next.rivals ||= {};
+  next.players[playerName] ||= { wins: 0, losses: 0, score: 0, streak: 0, bestStreak: 0 };
+
+  const player = next.players[playerName];
+  player.wins += won ? 1 : 0;
+  player.losses += won ? 0 : 1;
+  player.score += score;
+  player.streak = won ? player.streak + 1 : 0;
+  player.bestStreak = Math.max(player.bestStreak, player.streak);
+
+  const key = [playerName, opponentName].sort().join('::');
+  next.rivals[key] ||= { names: [playerName, opponentName].sort(), wins: 0, losses: 0 };
+  if (won) next.rivals[key].wins += 1;
+  else next.rivals[key].losses += 1;
+
+  return next;
+}
+
+function isOpen(board, row, col) {
+  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE && board[row][col] === null;
 }

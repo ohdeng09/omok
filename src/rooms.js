@@ -6,7 +6,7 @@ export function createRoomStore() {
 
   function createRoom({ nickname, partyMode }) {
     const code = createCode(rooms);
-    const player = createPlayer(nickname, 'black');
+    const player = createPlayer(nickname);
     const room = freshRoom(code, partyMode, [player]);
     rooms.set(code, room);
     return { room: publicRoom(room), player };
@@ -15,7 +15,7 @@ export function createRoomStore() {
   function joinRoom({ code, nickname }) {
     const room = requireRoom(rooms, code);
     if (room.players.length >= 2) throw new Error('room is full');
-    const player = createPlayer(nickname, 'white');
+    const player = createPlayer(nickname);
     room.players.push(player);
     room.status = 'playing';
     room.updatedAt = Date.now();
@@ -27,6 +27,7 @@ export function createRoomStore() {
     if (room.status !== 'playing') throw new Error('room is not playing');
     const player = room.players.find((candidate) => candidate.id === playerId);
     if (!player) throw new Error('player is not in room');
+    if (room.moves.length === 0) assignFirstMover(room, playerId);
     if (player.color !== room.turn) throw new Error('not your turn');
     if (isBlocked(room, row, col)) throw new Error('cell is blocked this turn');
 
@@ -66,10 +67,7 @@ export function createRoomStore() {
     room.rematchRequests.add(playerId);
     room.updatedAt = Date.now();
     if (room.players.length === 2 && room.players.every((player) => room.rematchRequests.has(player.id))) {
-      const players = room.players.map((player) => ({
-        ...player,
-        color: player.color === 'black' ? 'white' : 'black'
-      }));
+      const players = room.players.map((player) => ({ ...player, color: null }));
       const next = freshRoom(code, room.partyMode, players, room.previousLoserPlayerId);
       rooms.set(code, next);
       return { room: publicRoom(next) };
@@ -108,12 +106,20 @@ function freshRoom(code, partyMode, players, previousLoserPlayerId = null) {
   };
 }
 
-function createPlayer(nickname, color) {
+function createPlayer(nickname, color = null) {
   return {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     nickname: String(nickname || 'Player').slice(0, 18),
     color
   };
+}
+
+function assignFirstMover(room, playerId) {
+  const firstMover = room.players.find((player) => player.id === playerId);
+  const secondMover = room.players.find((player) => player.id !== playerId);
+  firstMover.color = 'black';
+  if (secondMover) secondMover.color = 'white';
+  room.turn = 'black';
 }
 
 function createCode(rooms) {

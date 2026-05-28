@@ -20,10 +20,20 @@ test('mobile clients can install and share room links', async () => {
 
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /theme-color/);
+  assert.match(html, /styles\.css\?v=/);
+  assert.match(html, /app\.js\?v=/);
   assert.match(app, /URLSearchParams/);
+  assert.match(app, /\/src\/ai\.js\?v=/);
   assert.match(app, /shareRoom/);
   assert.match(app, /navigator\.share/);
   assert.match(app, /serviceWorker/);
   assert.match(manifest, /온라인 오목/);
   assert.match(sw, /CACHE_NAME/);
+});
+
+test('deployed app shell does not blank if supplemental files are omitted', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(app, /from ['"]\/sound\.js['"]/);
+  assert.doesNotMatch(app, /from ['"]\/src\/scoring\.js['"]/);
 });
