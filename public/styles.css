@@ -237,6 +237,26 @@ label {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.rank-panel {
+  margin-top: 12px;
+}
+
+.rank-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rank-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
 .stage-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

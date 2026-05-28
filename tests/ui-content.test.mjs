@@ -23,11 +23,27 @@ test('app wires stone hit and result sounds into the UI', async () => {
   assert.match(app, /playStart/);
   assert.match(app, /playWin/);
   assert.match(app, /playLose/);
+  assert.match(app, /playClear/);
+  assert.match(app, /playChampion/);
   assert.match(app, /expert/);
   assert.match(app, /최고/);
   assert.match(app, /isLocalHost/);
   assert.match(app, /data-sound-toggle/);
   assert.match(css, /\.sound-toggle/);
+});
+
+test('solo challenge auto-advances and stores full-clear rankings', async () => {
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
+
+  assert.match(app, /SOLO_RANKING_KEY/);
+  assert.match(app, /soloChallenge/);
+  assert.match(app, /queueNextSoloStage/);
+  assert.match(app, /saveSoloClearTime/);
+  assert.match(app, /soloRankingHtml/);
+  assert.match(app, /formatDuration/);
+  assert.match(css, /\.rank-list/);
+  assert.match(css, /\.rank-item/);
 });
 
 test('app visibly explains the active standard Omok rule set', async () => {
@@ -54,7 +70,7 @@ test('mobile sharing points users to the Render public URL instead of localhost'
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(app, /PUBLIC_APP_URL = 'https:\/\/omok-h9o2\.onrender\.com\/\?fresh=20260528-ai-curve'/);
+  assert.match(app, /PUBLIC_APP_URL = 'https:\/\/omok-h9o2\.onrender\.com\/\?fresh=20260528-solo-run'/);
   assert.match(app, /CACHE_BUST_PARAM/);
   assert.match(app, /url\.searchParams\.set\('fresh', CACHE_BUST_PARAM\)/);
   assert.match(app, /mobileShareHtml/);

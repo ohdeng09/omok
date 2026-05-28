@@ -1,10 +1,11 @@
-import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-ai-curve';
-import { chooseAiMove } from '/src/ai.js?v=20260528-ai-curve';
+import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-solo-run';
+import { chooseAiMove } from '/src/ai.js?v=20260528-solo-run';
 
 const app = document.querySelector('#app');
-const CACHE_BUST_PARAM = '20260528-ai-curve';
-const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/?fresh=20260528-ai-curve';
+const CACHE_BUST_PARAM = '20260528-solo-run';
+const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/?fresh=20260528-solo-run';
 const SOUND_STORAGE_KEY = 'omok:sound-muted';
+const SOLO_RANKING_KEY = 'omok:solo-rankings';
 const sound = createSoundEngine();
 const initialParams = new URLSearchParams(location.search);
 cleanRuntimeUrl(initialParams);
@@ -14,6 +15,9 @@ const state = {
   room: null,
   source: null,
   solo: null,
+  soloChallenge: null,
+  soloAutoTimer: null,
+  soloRankings: JSON.parse(localStorage.getItem(SOLO_RANKING_KEY) || '[]'),
   pendingRoomCode: normalizeRoomCode(initialParams.get('room') || ''),
   lastOnlineRoomCode: null,
   lastOnlineMoveCount: null,
@@ -29,6 +33,7 @@ renderLobby();
 
 function renderLobby(message = '') {
   closeRoomStream();
+  clearSoloAutoAdvance();
   app.innerHTML = `
     <section class="hero">
       <div>
@@ -113,6 +118,7 @@ function closeRoomStream() {
 }
 
 function renderOnline(connectionMessage = '') {
+  clearSoloAutoAdvance();
   const room = state.room;
   const me = room.players.find((player) => player.id === state.player.id);
   const opponent = room.players.find((player) => player.id !== state.player.id);
@@ -177,9 +183,26 @@ function saveOnlineResult(room, me) {
   localStorage.setItem('omok:record', JSON.stringify(state.record));
 }
 
-function startSolo(stage = 1, difficulty = 'easy') {
+function startSolo(stage = 1, difficulty = stageDifficulty(stage), options = {}) {
   closeRoomStream();
-  state.solo = { board: createBoard(), turn: 'black', stage, difficulty, moves: [], result: null };
+  clearSoloAutoAdvance();
+  const normalizedStage = Math.max(1, Math.min(10, Number(stage) || 1));
+  const keepChallenge = Boolean(options.keepChallenge);
+  const startFreshChallenge = normalizedStage === 1 && !keepChallenge;
+  if (startFreshChallenge) {
+    state.soloChallenge = { startedAt: Date.now(), nextStage: 1 };
+  } else if (!keepChallenge) {
+    state.soloChallenge = null;
+  }
+  state.solo = {
+    board: createBoard(),
+    turn: 'black',
+    stage: normalizedStage,
+    difficulty: stageDifficulty(normalizedStage),
+    moves: [],
+    result: null,
+    message: soloChallengeStatus(normalizedStage)
+  };
   renderSolo();
 }
 
@@ -193,9 +216,10 @@ function renderSolo() {
           <h2>혼자 하기</h2>
           <div class="mini-actions"><span class="badge">Stage ${solo.stage}</span>${soundControlHtml()}</div>
         </div>
-        <p class="muted">${solo.result ? '도전 완료' : `${difficultyLabel(solo.difficulty)} AI와 대국 중`}</p>
+        <p class="muted">${solo.message || (solo.result ? '도전 완료' : `${difficultyLabel(solo.difficulty)} AI와 대국 중`)}</p>
         ${ruleNoteHtml(false)}
         ${solo.result ? resultHtml({ ...solo, players: [{ color: 'black', nickname: state.nickname }, { color: 'white', nickname: 'AI' }] }, { color: 'black', nickname: state.nickname }) : ''}
+        ${soloRankingHtml()}
         <div class="stage-grid">${Array.from({ length: 10 }, (_, index) => `<button class="stage" data-stage="${index + 1}">${index + 1}</button>`).join('')}</div>
         <div class="actions">
           <button id="restart">다시 시작</button>
@@ -205,7 +229,7 @@ function renderSolo() {
     </section>`;
   attachBoardHandlers(onSoloMove);
   document.querySelector('#leave').addEventListener('click', () => renderLobby());
-  document.querySelector('#restart').addEventListener('click', () => startSolo(solo.stage, solo.difficulty));
+  document.querySelector('#restart').addEventListener('click', () => startSolo(solo.stage, solo.difficulty, { keepChallenge: solo.stage === 1 ? false : Boolean(state.soloChallenge) }));
   document.querySelectorAll('.stage').forEach((button) => button.addEventListener('click', () => startSolo(Number(button.dataset.stage), stageDifficulty(Number(button.dataset.stage)))));
   wireSoundControls();
 }
@@ -249,9 +273,87 @@ function finishSoloIfNeeded() {
         })
       }
     };
-    if (winner?.color === 'black') sound.playWin();
-    else if (winner?.color === 'white') sound.playLose();
+    handleSoloResultAudioAndProgress(winner?.color || null);
   }
+}
+
+function handleSoloResultAudioAndProgress(winnerColor) {
+  if (!state.solo?.result) return;
+  if (winnerColor !== 'black') {
+    state.soloChallenge = null;
+    if (winnerColor === 'white') sound.playLose();
+    return;
+  }
+
+  if (state.solo.stage >= 10) {
+    const elapsed = state.soloChallenge?.nextStage === 10 ? Date.now() - state.soloChallenge.startedAt : null;
+    if (elapsed) saveSoloClearTime(elapsed);
+    state.solo.message = elapsed
+      ? `10단계 전체 클리어! 기록 ${formatDuration(elapsed)}`
+      : '10단계 클리어!';
+    state.soloChallenge = null;
+    sound.playChampion();
+    return;
+  }
+
+  if (state.soloChallenge?.nextStage === state.solo.stage) {
+    state.soloChallenge.nextStage = state.solo.stage + 1;
+    state.solo.message = `Stage ${state.solo.stage} 클리어! 다음 단계로 이동합니다.`;
+  } else {
+    state.solo.message = `Stage ${state.solo.stage} 클리어!`;
+  }
+  sound.playClear();
+  queueNextSoloStage(state.solo.stage + 1);
+}
+
+function queueNextSoloStage(nextStage) {
+  clearSoloAutoAdvance();
+  state.soloAutoTimer = setTimeout(() => {
+    startSolo(nextStage, stageDifficulty(nextStage), { keepChallenge: Boolean(state.soloChallenge) });
+  }, 1600);
+}
+
+function clearSoloAutoAdvance() {
+  if (state.soloAutoTimer) clearTimeout(state.soloAutoTimer);
+  state.soloAutoTimer = null;
+}
+
+function soloChallengeStatus(stage) {
+  if (!state.soloChallenge) return '';
+  const elapsed = Date.now() - state.soloChallenge.startedAt;
+  return `10단계 도전 중 · 현재 ${stage}/10 · ${formatDuration(elapsed)}`;
+}
+
+function saveSoloClearTime(elapsedMs) {
+  const entry = {
+    name: state.nickname || 'Player',
+    elapsedMs,
+    completedAt: new Date().toISOString()
+  };
+  state.soloRankings = [...state.soloRankings, entry]
+    .sort((a, b) => a.elapsedMs - b.elapsedMs)
+    .slice(0, 10);
+  localStorage.setItem(SOLO_RANKING_KEY, JSON.stringify(state.soloRankings));
+}
+
+function soloRankingHtml() {
+  const items = state.soloRankings.slice(0, 5);
+  return `
+    <div class="mode-note rank-panel">
+      <strong>10단계 클리어 랭킹</strong>
+      <div class="rank-list">
+        ${items.length ? items.map((entry, index) => `
+          <div class="rank-item"><span>${index + 1}. ${escapeHtml(entry.name)}</span><strong>${formatDuration(entry.elapsedMs)}</strong></div>
+        `).join('') : '<div class="rank-item"><span>아직 기록 없음</span><strong>-</strong></div>'}
+      </div>
+    </div>`;
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function boardHtml(board, winnerLine, blockedCells) {
@@ -591,6 +693,17 @@ function createSoundEngine(options = {}) {
     playSequence([392, 523, 659, 784, 1046], 0.105, 0.22, 'triangle');
   }
 
+  function playClear() {
+    if (!canPlay()) return;
+    playSequence([330, 440, 554, 660], 0.085, 0.18, 'triangle');
+  }
+
+  function playChampion() {
+    if (!canPlay()) return;
+    playSequence([392, 523, 659, 784, 988, 1175, 1319], 0.095, 0.24, 'triangle');
+    setTimeout(() => playSequence([659, 784, 1046], 0.12, 0.18, 'sine'), 520);
+  }
+
   function playLose() {
     if (!canPlay()) return;
     playSequence([392, 330, 262, 196], 0.14, 0.18, 'sine');
@@ -663,6 +776,8 @@ function createSoundEngine(options = {}) {
     playStone,
     playStart,
     playWin,
+    playClear,
+    playChampion,
     playLose,
     toggleMuted,
     isMuted
