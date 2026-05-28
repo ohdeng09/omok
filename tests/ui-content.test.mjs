@@ -54,7 +54,7 @@ test('mobile sharing points users to the Render public URL instead of localhost'
   const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const css = await readFile(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-  assert.match(app, /PUBLIC_APP_URL = 'https:\/\/omok-h9o2\.onrender\.com\/\?fresh=20260528-cache-fix'/);
+  assert.match(app, /PUBLIC_APP_URL = 'https:\/\/omok-h9o2\.onrender\.com\/\?fresh=20260528-ai-curve'/);
   assert.match(app, /CACHE_BUST_PARAM/);
   assert.match(app, /url\.searchParams\.set\('fresh', CACHE_BUST_PARAM\)/);
   assert.match(app, /mobileShareHtml/);

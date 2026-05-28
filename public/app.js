@@ -1,9 +1,9 @@
-import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-cache-fix';
-import { chooseAiMove } from '/src/ai.js?v=20260528-cache-fix';
+import { BOARD_SIZE, createBoard, getWinner, isBoardFull, placeStone } from '/src/rules.js?v=20260528-ai-curve';
+import { chooseAiMove } from '/src/ai.js?v=20260528-ai-curve';
 
 const app = document.querySelector('#app');
-const CACHE_BUST_PARAM = '20260528-cache-fix';
-const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/?fresh=20260528-cache-fix';
+const CACHE_BUST_PARAM = '20260528-ai-curve';
+const PUBLIC_APP_URL = 'https://omok-h9o2.onrender.com/?fresh=20260528-ai-curve';
 const SOUND_STORAGE_KEY = 'omok:sound-muted';
 const sound = createSoundEngine();
 const initialParams = new URLSearchParams(location.search);

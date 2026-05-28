@@ -1,4 +1,4 @@
-const CACHE_NAME = 'online-omok-v11';
+const CACHE_NAME = 'online-omok-v12';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
